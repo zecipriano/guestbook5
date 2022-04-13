@@ -23,14 +23,29 @@ class ConferenceController extends AbstractController
         private Environment $twig,
         private EntityManagerInterface $entityManager,
         private MessageBusInterface $bus
-    ) {}
+    ) {
+    }
 
     #[Route('/', name: 'homepage')]
     public function index(ConferenceRepository $conferenceRepository): Response
     {
-        return new Response($this->twig->render('conference/index.html.twig', [
+        $response = new Response($this->twig->render('conference/index.html.twig', [
             'conferences' => $conferenceRepository->findAll(),
         ]));
+        $response->setSharedMaxAge(3600);
+
+        return $response;
+    }
+
+    #[Route('/conference_header', name: 'conference_header')]
+    public function conferenceHeader(ConferenceRepository $conferenceRepository): Response
+    {
+        $response = new Response($this->twig->render('conference/header.html.twig', [
+            'conferences' => $conferenceRepository->findAll(),
+        ]));
+        $response->setSharedMaxAge(3600);
+
+        return $response;
     }
 
     /**
@@ -46,14 +61,13 @@ class ConferenceController extends AbstractController
         Conference $conference,
         CommentRepository $commentRepository,
         string $photoDir
-    ): Response
-    {
+    ): Response {
         $comment = new Comment();
         $form = $this->createForm(CommentFormType::class, $comment);
         $form->handleRequest($request);
-        if($form->isSubmitted() && $form->isValid()) {
+        if ($form->isSubmitted() && $form->isValid()) {
             $comment->setConference($conference);
-            if($photo = $form['photo']->getData()) {
+            if ($photo = $form['photo']->getData()) {
                 $filename = bin2hex(random_bytes(6)) . '.' . $photo->guessExtension();
                 try {
                     $photo->move($photoDir, $filename);
@@ -88,7 +102,7 @@ class ConferenceController extends AbstractController
             'comments' => $paginator,
             'previous' => $offset - CommentRepository::PAGINATOR_PER_PAGE,
             'next' => min(count($paginator), $offset + CommentRepository::PAGINATOR_PER_PAGE),
-            'comment_form' => $form->createView()
+            'comment_form' => $form->createView(),
         ]));
     }
 }
