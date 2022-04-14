@@ -27,8 +27,9 @@ class StepInfoCommand extends Command
             $process = new Process(['git', 'tag', '-l', '--points-at', 'HEAD']);
             $process->mustRun();
             $item->expiresAfter(30);
-        });
 
+            return $process->getOutput();
+        });
         $output->writeln($step);
 
         return 0;
