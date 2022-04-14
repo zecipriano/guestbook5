@@ -17,18 +17,29 @@ use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Notifier\Notification\Notification;
 use Symfony\Component\Notifier\NotifierInterface;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Twig\Environment;
 
 class ConferenceController extends AbstractController
 {
-    public function __construct(
-        private Environment $twig,
-        private EntityManagerInterface $entityManager,
-        private MessageBusInterface $bus
-    ) {
+    private $twig;
+    private $entityManager;
+    private $bus;
+
+    public function __construct(Environment $twig, EntityManagerInterface $entityManager, MessageBusInterface $bus)
+    {
+        $this->twig = $twig;
+        $this->entityManager = $entityManager;
+        $this->bus = $bus;
     }
 
-    #[Route('/', name: 'homepage')]
+    #[Route('/')]
+    public function indexNoLocale(): Response
+    {
+        return $this->redirectToRoute('homepage', ['_locale' => 'en']);
+    }
+
+    #[Route('/{_locale<%app.supported_locales%>}/', name: 'homepage')]
     public function index(ConferenceRepository $conferenceRepository): Response
     {
         $response = new Response($this->twig->render('conference/index.html.twig', [
@@ -39,7 +50,7 @@ class ConferenceController extends AbstractController
         return $response;
     }
 
-    #[Route('/conference_header', name: 'conference_header')]
+    #[Route('/{_locale<%app.supported_locales%>}/conference_header', name: 'conference_header')]
     public function conferenceHeader(ConferenceRepository $conferenceRepository): Response
     {
         $response = new Response($this->twig->render('conference/header.html.twig', [
@@ -50,28 +61,16 @@ class ConferenceController extends AbstractController
         return $response;
     }
 
-    /**
-     * @throws \Twig\Error\SyntaxError
-     * @throws \Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface
-     * @throws \Twig\Error\RuntimeError
-     * @throws \Twig\Error\LoaderError
-     * @throws \Exception
-     */
-    #[Route('/conference/{slug}', name: 'conference')]
-    public function show(
-        Request $request,
-        Conference $conference,
-        CommentRepository $commentRepository,
-        NotifierInterface $notifier,
-        string $photoDir
-    ): Response {
+    #[Route('/{_locale<%app.supported_locales%>}/conference/{slug}', name: 'conference')]
+    public function show(Request $request, Conference $conference, CommentRepository $commentRepository, NotifierInterface $notifier, string $photoDir): Response
+    {
         $comment = new Comment();
         $form = $this->createForm(CommentFormType::class, $comment);
         $form->handleRequest($request);
         if ($form->isSubmitted() && $form->isValid()) {
             $comment->setConference($conference);
             if ($photo = $form['photo']->getData()) {
-                $filename = bin2hex(random_bytes(6)) . '.' . $photo->guessExtension();
+                $filename = bin2hex(random_bytes(6)).'.'.$photo->guessExtension();
                 try {
                     $photo->move($photoDir, $filename);
                 } catch (FileException $e) {
@@ -90,21 +89,16 @@ class ConferenceController extends AbstractController
                 'permalink' => $request->getUri(),
             ];
 
-            $this->bus->dispatch(new CommentMessage($comment->getId(), $context));
+            $reviewUrl = $this->generateUrl('review_comment', ['id' => $comment->getId()], UrlGeneratorInterface::ABSOLUTE_URL);
+            $this->bus->dispatch(new CommentMessage($comment->getId(), $reviewUrl, $context));
 
-            $notifier->send(new Notification('Thank you for the feedback; your comment will be posted after moderation.',
-                ['browser']));
-
-            $this->entityManager->flush();
+            $notifier->send(new Notification('Thank you for the feedback; your comment will be posted after moderation.', ['browser']));
 
             return $this->redirectToRoute('conference', ['slug' => $conference->getSlug()]);
         }
 
         if ($form->isSubmitted()) {
-            $notifier->send(new Notification(
-                'Can you check your submission? There are some problems with it.',
-                ['browser'])
-            );
+            $notifier->send(new Notification('Can you check your submission? There are some problems with it.', ['browser']));
         }
 
         $offset = max(0, $request->query->getInt('offset', 0));
